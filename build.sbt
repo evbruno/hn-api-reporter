@@ -3,7 +3,6 @@ ThisBuild / version := "0.1.0-SNAPSHOT"
 ThisBuild / scalaVersion := "2.13.8"
 
 val akkaVersion = "2.6.19"
-val akkaHttpVersion = "10.2.9"
 
 lazy val root = (project in file("."))
   .settings(
@@ -16,7 +15,7 @@ lazy val root = (project in file("."))
       "io.circe" %% "circe-generic" % "0.14.2",
 
       "com.typesafe.akka" %% "akka-actor-typed"           % akkaVersion,
-      "com.typesafe.akka" %% "akka-actor-testkit-typed" % akkaVersion % Test,
+      "com.typesafe.akka" %% "akka-actor-testkit-typed"   % akkaVersion % Test,
       "ch.qos.logback"    % "logback-classic"             % "1.2.11",
     )
   )
