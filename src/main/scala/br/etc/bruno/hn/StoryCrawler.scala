@@ -47,7 +47,6 @@ class StoryCrawler(implicit val service: HackerNewsAPI.Service) {
         comments += item.id ->
           Comment(item.id, item.parent.get, item.by.get, item.kids.getOrElse(Seq.empty))
           // FIXME better handling option
-
       }
     }
 
