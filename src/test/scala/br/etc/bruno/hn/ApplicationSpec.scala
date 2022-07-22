@@ -14,7 +14,7 @@ class ApplicationSpec
 
   "crawler should fetch Story and return all of its comments" in {
     val subject = new StoryCrawler()
-    val story = subject.fetchStory(StoryID).get
+    val story = subject.fetchStory(TopStories(0)).get
     val comments = story.kids
 
     comments.size shouldBe 4
@@ -23,7 +23,8 @@ class ApplicationSpec
   }
 
   "application should return the correct report" in {
-    val subject = new Application(4, 2)
+    // FIXME use the 2nd Story? (IDK)
+    val subject = new Application(4, 1)
     val report = subject.run()
 
     report.size shouldBe 1

@@ -26,7 +26,7 @@ class StoryActorSpec
     val subject = testKit.spawn(StoryActor())
     val probe = testKit.createTestProbe[StoryActor.StoryLoaded]()
 
-    subject ! StoryActor.InitializeStory(Kids, probe.ref)
+    subject ! StoryActor.InitializeStory(Kids(TopStories(0)), probe.ref)
 
     probe.expectMessage(StoryLoaded(Set(
       Comment(27895824, 27880018, "mftb", List(27896396, 27898570)),
