@@ -1,9 +1,9 @@
-package br.etc.bruno.hn.v2
+package br.etc.bruno.hn.actors
 
 import akka.NotUsed
 import akka.actor.typed.scaladsl.{ ActorContext, Behaviors, Routers }
 import akka.actor.typed.{ ActorRef, ActorSystem, Behavior, SupervisorStrategy }
-import br.etc.bruno.hn.v2.TreeWalkerActor.{ Initialize, TreeWalked }
+import br.etc.bruno.hn.actors.TreeWalkerActor.{ Initialize, TreeWalked }
 import br.etc.bruno.hn.api.ItemResponse
 import scala.util.Random
 

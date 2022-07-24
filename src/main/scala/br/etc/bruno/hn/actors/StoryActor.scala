@@ -1,10 +1,11 @@
-package br.etc.bruno.hn.v2
+package br.etc.bruno.hn.actors
 
 import akka.actor.typed.scaladsl.{ ActorContext, Behaviors, Routers }
 import akka.actor.typed.{ ActorRef, Behavior, PostStop, SupervisorStrategy }
 import br.etc.bruno.hn.HackerNewsAPI.Service
 import br.etc.bruno.hn.api.ItemResponse
-import br.etc.bruno.hn.model.{ Comment, ID }
+import br.etc.bruno.hn.model.{ Comment, ID, Story }
+import br.etc.bruno.hn.actors.StoryActor.{ StoryCommand, StoryLoaded }
 import scala.util.Random
 
 object CommentsActorWorker {
@@ -43,28 +44,45 @@ object CommentsActorWorker {
 
 object StoryActor {
 
-  case class StoryLoaded(result: Set[Comment])
+  // reply command(s)
+  //  sealed trait StoryResponse
+  final case class StoryLoaded(result: Set[Comment]) //extends StoryResponse
 
+  // request commands
   sealed trait StoryCommand
 
-  case class Start(replyTo: ActorRef[StoryLoaded]) extends StoryCommand
-  case object Tick extends StoryCommand
-  case class Process(itemID: ID, replyTo: ActorRef[StoryCommand]) extends StoryCommand
-  case class WorkerResult(result: Option[Comment]) extends StoryCommand
+  final case class Start(replyTo: ActorRef[StoryLoaded]) extends StoryCommand
+
+  final case object Tick extends StoryCommand
+
+  final case class Process(itemID: ID, replyTo: ActorRef[StoryCommand]) extends StoryCommand
+
+  final case class WorkerResult(result: Option[Comment]) extends StoryCommand
 
   // FSM event becomes the type of the message Actor supports
 
-  def apply(storyId: ID, kids: Seq[ID])(implicit api: Service): Behavior[StoryCommand] =
+  def apply(storyId: ID)(implicit api: Service): Behavior[StoryCommand] = {
+    api.fetchItem(storyId) match {
+      case None               =>
+        Behaviors.empty
+      case Some(itemResponse) =>
+        initializing(storyId, itemResponse.kids.getOrElse(Seq.empty))
+    }
+  }
+
+  private def initializing(storyId: ID,
+                           kids: Seq[ID])
+                          (implicit api: Service): Behavior[StoryCommand] =
     Behaviors.receive { (context, message) =>
       message match {
         case Start(replyTo) =>
-          context.log.info("Loading {} kids for story id {}", kids.size, storyId)
+          context.log.info("Initializing {} kids for story id {}", kids.size, storyId)
           val wrk = buildCommentsWorker(context)
           val run = running(wrk, replyTo, kids, Seq.empty, 0)
           context.self ! Tick
           run
+      }
     }
-  }
 
   private def running(comments: ActorRef[StoryCommand],
                       replyTo: ActorRef[StoryLoaded],
