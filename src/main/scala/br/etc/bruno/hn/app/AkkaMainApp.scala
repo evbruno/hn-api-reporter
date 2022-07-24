@@ -24,7 +24,8 @@ object AkkaMainApp extends App {
   }
 
   val root: Behavior[NotUsed] = Behaviors.setup { context =>
-    val crawler = context.spawn(StoryActor(), "StoryActor")
+    val root = Seq(27898719L, 27895824L)
+    val crawler = context.spawn(StoryActor(42l, root), "StoryActor")
     val log = context.log
 
     val responder = context.spawn(Behaviors.receiveMessage[StoryLoaded] {
@@ -40,8 +41,7 @@ object AkkaMainApp extends App {
         Behaviors.same
     }, "responder")
 
-    val root = Seq(27898719L, 27895824L)
-    crawler ! InitializeStory(root, responder)
+    crawler ! Start(responder)
 
     Behaviors.empty
   }

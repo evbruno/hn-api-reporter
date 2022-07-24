@@ -47,33 +47,30 @@ object StoryActor {
 
   sealed trait StoryCommand
 
-  case class InitializeStory(ids: Seq[ID], replyTo: ActorRef[StoryLoaded]) extends StoryCommand
+  case class Start(replyTo: ActorRef[StoryLoaded]) extends StoryCommand
   case object Tick extends StoryCommand
   case class Process(itemID: ID, replyTo: ActorRef[StoryCommand]) extends StoryCommand
   case class WorkerResult(result: Option[Comment]) extends StoryCommand
 
   // FSM event becomes the type of the message Actor supports
 
-  def apply()(implicit api: Service): Behavior[StoryCommand] = Behaviors.receive { (context, message) =>
-    message match {
-      case InitializeStory(ids, replyTo) =>
-        context.log.info("starting new Walker...")
-        val wrk = buildWorkers(context)
-        val newBehavior = apply(wrk, replyTo, ids, Seq.empty)
-        context.self ! Tick // FIXME I'm not sure about this
-        newBehavior
-
-      case _                   =>
-        context.log.error("unhandled...")
-        Behaviors.unhandled
+  def apply(storyId: ID, kids: Seq[ID])(implicit api: Service): Behavior[StoryCommand] =
+    Behaviors.receive { (context, message) =>
+      message match {
+        case Start(replyTo) =>
+          context.log.info("Loading {} kids for story id {}", kids.size, storyId)
+          val wrk = buildCommentsWorker(context)
+          val run = running(wrk, replyTo, kids, Seq.empty, 0)
+          context.self ! Tick
+          run
     }
   }
 
-  private def apply(workers: ActorRef[StoryCommand],
-                    replyTo: ActorRef[StoryLoaded],
-                    queue: Seq[ID],
-                    accumulated: Seq[Comment],
-                    pending: Int = 0): Behavior[StoryCommand] =
+  private def running(comments: ActorRef[StoryCommand],
+                      replyTo: ActorRef[StoryLoaded],
+                      queue: Seq[ID],
+                      accumulated: Seq[Comment],
+                      pending: Int = 0): Behavior[StoryCommand] =
     Behaviors.receive[StoryCommand] { (context, message) =>
       message match {
 
@@ -84,10 +81,10 @@ object StoryActor {
             Behaviors.same
           else {
             queue foreach { target =>
-              workers ! Process(target, context.self)
+              comments ! Process(target, context.self)
             }
             // reset the Queue and continue...
-            apply(workers, replyTo, Seq.empty, accumulated, pending + queue.size)
+            running(comments, replyTo, Seq.empty, accumulated, pending + queue.size)
           }
 
         case WorkerResult(maybeComment) =>
@@ -99,10 +96,10 @@ object StoryActor {
           if (updatedQueue.nonEmpty) {
             context.log.info(s"Non Empty queue, awaiting for {} kids, w/ {} pending execs", updatedQueue.size, pending)
             context.self ! Tick
-            apply(workers, replyTo, updatedQueue, updatedResult, pending - 1)
+            running(comments, replyTo, updatedQueue, updatedResult, pending - 1)
           } else if (pending >= 2) {
             context.log.info(s"Empty queue, still awaiting for {} execs", pending)
-            apply(workers, replyTo, updatedQueue, updatedResult, pending - 1)
+            running(comments, replyTo, updatedQueue, updatedResult, pending - 1)
           } else {
             context.log.info(s"Empty queue, all done!")
             replyTo ! StoryLoaded(updatedResult.toSet)
@@ -121,8 +118,8 @@ object StoryActor {
     }
 
 
-  private def buildWorkers(context: ActorContext[StoryCommand])(implicit api: Service) = {
-    val pool = Routers.pool(poolSize = 2) {
+  private def buildCommentsWorker(context: ActorContext[StoryCommand])(implicit api: Service) = {
+    val pool = Routers.pool(poolSize = 4) {
       Behaviors.supervise(CommentsActorWorker())
         .onFailure[Exception](SupervisorStrategy.restart)
     }

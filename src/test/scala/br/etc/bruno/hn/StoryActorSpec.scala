@@ -23,10 +23,11 @@ class StoryActorSpec
   override def afterAll(): Unit = testKit.shutdownTestKit()
 
   "story actor should reply with 4 comments" in {
-    val subject = testKit.spawn(StoryActor())
+    val storyId = TopStories(0)
+    val subject = testKit.spawn(StoryActor(storyId, Kids(storyId)))
     val probe = testKit.createTestProbe[StoryActor.StoryLoaded]()
 
-    subject ! StoryActor.InitializeStory(Kids(TopStories(0)), probe.ref)
+    subject ! StoryActor.Start(probe.ref)
 
     probe.expectMessage(StoryLoaded(Set(
       Comment(27895824, 27880018, "mftb", List(27896396, 27898570)),
