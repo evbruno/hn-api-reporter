@@ -29,6 +29,7 @@ object HackerNewsAPI {
     import sttp.client3._
     import io.circe.generic.auto._
 
+    //TODO consider moving to HttpClientFutureBackend
     private val backend = HttpClientSyncBackend()
 
     override def fetchTopStories(): Option[TopStoriesResponse] = {

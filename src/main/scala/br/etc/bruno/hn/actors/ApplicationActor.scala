@@ -1,110 +1,112 @@
 package br.etc.bruno.hn.actors
 
-import akka.actor.typed.scaladsl.{ ActorContext, Behaviors }
+import akka.actor.typed.scaladsl.{ ActorContext, Behaviors, StashBuffer }
 import akka.actor.typed.{ ActorRef, Behavior }
+import akka.util.Timeout
 import br.etc.bruno.hn.HackerNewsAPI.Service
-import br.etc.bruno.hn.actors.StoryActor.StoryCommand
+import br.etc.bruno.hn.actors.StoryActor.StoryResponse
 import br.etc.bruno.hn.model._
+import scala.concurrent.duration.DurationInt
+import scala.util.{ Failure, Success }
 
 object ApplicationActor {
 
-  // reply command(s)
+  // Response commands
   sealed trait AppResponse
-
   final case class StoriesLoaded(result: Set[Story]) extends AppResponse
+  final case object NoStoriesFound extends AppResponse
 
-  case object NoStoriesFound extends AppResponse
-
-  // request commands
+  // Request commands
   sealed trait AppCommand
+  final case class Start(replyTo: ActorRef[AppResponse]) extends AppCommand
 
-  final case class AStart(replyTo: ActorRef[AppResponse]) extends AppCommand
+  // Internal protocol
+  private case class TopStoriesLoadedWrapped(res: TopStoriesActor.StoryResponse) extends AppCommand
+  private case class AllStoriesLoadedWrapped(result: Set[Story]) extends AppCommand
 
   def apply(topCommenter: Int = 2,
             topStories: Int = 3)
-           (implicit svc: Service): Behavior[AppCommand] = Behaviors.setup { context =>
+           (implicit api: Service): Behavior[AppCommand] = {
+    Behaviors.withStash(8) { buffer =>
+      Behaviors.setup[AppCommand] { context =>
+        implicit val timeout: Timeout = 10.minutes
+        val topper = context.spawn(TopStoriesActor(topStories), "top-stories")
 
-    svc.fetchTopStories() match {
-      case None =>
-        Behaviors.empty
-      case Some(stories) =>
-        initializing(stories.ids.take(topStories), context, topCommenter)
+        context.ask(topper, replyTo => TopStoriesActor.Start(replyTo)) {
+          case Success(value)     =>
+            TopStoriesLoadedWrapped(value.response)
+          case Failure(exception) =>
+            exception.printStackTrace()
+            context.log.error(exception.getMessage)
+            TopStoriesLoadedWrapped(Set.empty)
+        }
+
+        initializing(context, buffer, topCommenter)
+      }
     }
   }
 
-    private def initializing(stories: Seq[ID],
-                            context: ActorContext[AppCommand],
-                            topCommenter: Int = 2)
-                           (implicit svc: Service): Behavior[AppCommand] =  {
+  private def initializing(context: ActorContext[AppCommand],
+                           buffer: StashBuffer[AppCommand],
+                           topCommenter: Int = 2)
+                          (implicit api: Service): Behaviors.Receive[AppCommand] =
+    Behaviors.receiveMessage[AppCommand] {
+      case TopStoriesLoadedWrapped(stories) =>
+        buffer.unstashAll(loadStories(stories, context, topCommenter))
+      case other                             =>
+        // stash all other messages for later processing
+        buffer.stash(other)
+        Behaviors.same
 
-      // spawn 1 child actor per story
-      val pending = stories.size
-      val storiesActor: Seq[ActorRef[StoryCommand]] = stories.map { id =>
-        context.spawn(StoryActor(id), s"story-actor-${id}")
-      }
-
-
-//      val aggregator = context.spawn(Behaviors.receiveMessage[StoryLoaded] {
-//  //      case Stor=>
-//        Behaviors.same
-//      })
-  //
-  //    val children: Seq[ActorRef[_]] = stories.map { id =>
-  //      val apiResponse = svc.fetchItem(id)
-  //      if (apiResponse.isEmpty)
-  //        None
-  //      else
-  //        context.spawn(StoryActor(id, apiResponse.get.kids.get), s"story-actor-${id}")
-  //    }
-  //
-  //    ???
-  //
-      Behaviors.same
     }
 
+  private def loadStories(stories: TopStoriesActor.StoryResponse,
+                            context: ActorContext[AppCommand],
+                            topCommenter: Int = 2)
+                           (implicit api: Service): Behavior[AppCommand] =
+    Behaviors.receiveMessage {
+      case Start(replyTo) =>
+        context.log.info("Loaded {} top stories", stories.size)
+        accumulatingStories(stories, replyTo, topCommenter)
+    }
 
-//    Behaviors.receive { (message, context) =>
-//      message match {
-//        case AStart(replyTo) =>
-//          // FIXME async service?
-//          svc fetchTopStories() match {
-//            case None          =>
-//              replyTo ! NoStoriesFound
-//              Behaviors.empty
-//            case Some(stories) =>
-//              Behaviors.empty
-//            //              initializing(stories.ids.take(topStories), replyTo, context, topCommenter)
-//          }
-//      }
-//    }
+  private def accumulatingStories(
+                                 stories: TopStoriesActor.StoryResponse,
+                                 replyTo: ActorRef[AppResponse],
+                                 topCommenter: Int = 2)
+                               (implicit api: Service): Behavior[AppCommand] =
+    Behaviors.setup { context =>
 
-  //  private def initializing(stories: Seq[ID],
-  //                          replyTo: ActorRef[AppResponse],
-  //                          context: ActorContext[AppCommand],
-  //                          topCommenter: Int = 2)
-  //                         (implicit svc: Service): Behavior[AppCommand] = {
-  //
-  //    // spawn 1 child actor per story
-  //    val pending = stories.size
-  //    val storiesActor: Seq[ActorRef[StoryCommand]] = stories.map { id =>
-  //      context.spawn(StoryActor(id), s"story-actor-${id}")
-  //    }
-  //
-  ////    val aggregator = context.spawn(Behaviors.receiveMessage[StoryLoaded] {
-  //////      case Stor=>
-  ////      Behaviors.same
-  ////    })
-  ////
-  ////    val children: Seq[ActorRef[_]] = stories.map { id =>
-  ////      val apiResponse = svc.fetchItem(id)
-  ////      if (apiResponse.isEmpty)
-  ////        None
-  ////      else
-  ////        context.spawn(StoryActor(id, apiResponse.get.kids.get), s"story-actor-${id}")
-  ////    }
-  ////
-  ////    ???
-  ////
-  //    Behaviors.same
-  //  }
+      val accumulator = context.spawnAnonymous(newAccumulator(context, stories.size))
+
+      stories foreach { storyId =>
+          val act = context.spawnAnonymous(StoryActor(storyId))
+          act ! StoryActor.Start(accumulator)
+      }
+
+      Behaviors.receiveMessage {
+        case AllStoriesLoadedWrapped(response) =>
+          replyTo ! StoriesLoaded(response)
+          Behaviors.same
+        case t                                 =>
+          context.log.info("what? {}", t)
+          Behaviors.same
+      }
+    }
+
+  def newAccumulator(context: ActorContext[AppCommand],
+                     pending: Int,
+                     acc: Set[Story] = Set.empty): Behaviors.Receive[StoryResponse] =
+    Behaviors.receiveMessage {
+      case StoryActor.StoryLoaded(story: Story) =>
+        val updated: Set[Story] = acc + story
+
+        if (pending > 1)
+          newAccumulator(context, pending - 1, updated)
+        else {
+          context.self ! AllStoriesLoadedWrapped(updated)
+          Behaviors.stopped
+        }
+    }
+
 }

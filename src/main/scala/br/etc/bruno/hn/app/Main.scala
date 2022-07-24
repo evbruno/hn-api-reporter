@@ -9,7 +9,7 @@ object Main {
   def main(args: Array[String]): Unit = {
     val (topStories, topCommenter) =
       if (args.length == 2) (args(0).toInt, args(1).toInt)
-      else (30, 2)
+      else (30, 5)
 
     // FIXME I'm using this delegate for now to control the response I want to see
     // remove it before submitting!!
