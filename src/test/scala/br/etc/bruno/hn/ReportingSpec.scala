@@ -93,12 +93,28 @@ class ReportingSpec extends AnyFreeSpec with Matchers {
     )
   )
 
-  "story comments tree" - {
+  "story comments" - {
     "build the report for all Stories / user" in {
       val r = Report.reportAll(Seq(StoryA, StoryB, StoryC)).sortBy(_.story.id)
       r(0).prettyColumns shouldBe Seq("Story A", "user-c (3 for story - 8 total)", "user-b (2 for story - 10 total)")
       r(1).prettyColumns shouldBe Seq("Story B", "user-a (4 for story - 9 total)", "user-b (3 for story - 10 total)")
       r(2).prettyColumns shouldBe Seq("Story C", "user-b (5 for story - 10 total)", "user-a (4 for story - 9 total)")
+    }
+
+    "build tabular data output" in {
+      val topCommenter = 4
+      val r1 = Report.reportAll(Seq(StoryA, StoryB, StoryC), topCommenter).sortBy(_.story.id)
+      val table = Report.tabularData(r1, topCommenter)
+      val expected = """|-------------------------------------------------------------------------------------------------------------------------
+                        ||Story  |#1 Top Commenter               |#2 Top Commenter               |#3 Top Commenter              |#4 Top Commenter|
+                        |-------------------------------------------------------------------------------------------------------------------------
+                        ||Story A|user-c (3 for story - 8 total) |user-b (2 for story - 10 total)|user-a (1 for story - 9 total)|< no data >     |
+                        ||Story B|user-a (4 for story - 9 total) |user-b (3 for story - 10 total)|user-c (2 for story - 8 total)|< no data >     |
+                        ||Story C|user-b (5 for story - 10 total)|user-a (4 for story - 9 total) |user-c (3 for story - 8 total)|< no data >     |
+                        |-------------------------------------------------------------------------------------------------------------------------
+                        |""".stripMargin
+
+      table shouldBe expected
     }
   }
 
