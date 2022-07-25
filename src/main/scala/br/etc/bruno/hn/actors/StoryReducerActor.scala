@@ -1,7 +1,7 @@
 package br.etc.bruno.hn.actors
 
 import akka.actor.typed.scaladsl.{ ActorContext, Behaviors, Routers }
-import akka.actor.typed.{ ActorRef, Behavior, SupervisorStrategy }
+import akka.actor.typed.{ ActorRef, ActorTags, Behavior, SupervisorStrategy }
 import br.etc.bruno.hn.model.{ Comment, ID, Story }
 import br.etc.bruno.hn.services.HackerNewsAPI.Service
 import br.etc.bruno.hn.services.Report.CommentReport
@@ -65,9 +65,14 @@ object StoryReducerActor {
     Behaviors.receive { (context, message) =>
       message match {
         case Start(replyTo) =>
-          context.log.info("Initializing {} kids for story ({}) {}", kids.size, story.id, story.title)
-          context.self ! Dequeue
-          running(story, buildCommentsWorker(context), replyTo, kids)
+          context.log.debug("Initializing {} kids for story ({}) {}", kids.size, story.id, story.title)
+          if (kids.isEmpty) {
+            replyTo ! StoryReduced(story, Set.empty)
+            Behaviors.empty
+          } else {
+            context.self ! Dequeue
+            running(story, buildCommentsWorker(context), replyTo, kids)
+          }
         case _              =>
           Behaviors.unhandled
       }
@@ -129,7 +134,7 @@ object StoryReducerActor {
             context.log.debug(s"Empty queue, still awaiting for {} execs", pending)
             running(story, commentActor, replyTo, updatedQueue, updatedResult, pending - 1)
           } else {
-            context.log.info(s"Empty queue, all done for story {}", story)
+            context.log.debug(s"Empty queue, all done for story {}", story)
             replyTo ! StoryReduced(story, updatedResult.values.toSet)
             Behaviors.empty
           }
@@ -147,6 +152,6 @@ object StoryReducerActor {
         .onFailure[Exception](SupervisorStrategy.restart)
     }
 
-    context.spawn(pool, "comments-worker-pool")
+    context.spawn(pool, "comments-worker-pool", ActorTags("comments-worker-pool"))
   }
 }

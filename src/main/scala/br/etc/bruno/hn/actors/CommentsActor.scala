@@ -19,7 +19,7 @@ object CommentsActor {
   def apply()(implicit api: Service): Behavior[StoryCommand] =
     Behaviors.setup { context =>
 
-      context.log.info(s"Starting worker at {}", Thread.currentThread().getName)
+      context.log.debug(s"Starting worker at {}", Thread.currentThread().getName)
 
       Behaviors.receiveMessage[StoryCommand] {
         case Process(id, replyTo) =>

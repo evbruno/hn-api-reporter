@@ -28,6 +28,8 @@ object AkkaMainApp {
       val applicationActor = context.spawn(ApplicationActor(topStories), "app-actor")
       val log = context.log
 
+      log.info("Starting app with {} top stories and {} top commenters", topStories, topCommenter)
+
       val rootHandler = context.spawn(Behaviors.receiveMessage[AppResponse] {
 
         case StoriesLoaded(response) =>
@@ -36,7 +38,8 @@ object AkkaMainApp {
           context.system.terminate()
           Behaviors.stopped
 
-        case _ =>
+        case t =>
+          context.log.warn("Unknown message {}", t)
           Behaviors.unhandled
 
       }.receiveSignal {

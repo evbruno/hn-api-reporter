@@ -7,6 +7,7 @@ import br.etc.bruno.hn.services.HackerNewsAPI.Service
 import br.etc.bruno.hn.actors.StoryReducerActor.StoryResponse
 import br.etc.bruno.hn.model._
 import br.etc.bruno.hn.services.Report.CommentReport
+import org.slf4j.Logger
 import scala.concurrent.duration.DurationInt
 import scala.util.{ Failure, Success }
 
@@ -49,7 +50,7 @@ object ApplicationActor {
    */
   def apply(topStories: Int = 3)
            (implicit api: Service): Behavior[AppCommand] = {
-    Behaviors.withStash(8) { buffer =>
+    Behaviors.withStash(32) { buffer =>
       Behaviors.setup[AppCommand] { context =>
         implicit val timeout: Timeout = 10.minutes
         val topper = context.spawn(TopStoriesActor(topStories), "top-stories")
@@ -106,7 +107,7 @@ object ApplicationActor {
                          (implicit api: Service): Behavior[AppCommand] =
     Behaviors.receiveMessage {
       case Start(replyTo) =>
-        context.log.info("Loaded {} top stories", stories.size)
+        context.log.info("Loaded top stories {}", stories.mkString(", "))
         accumulatingStories(stories, replyTo)
       case _              =>
         Behaviors.unhandled
@@ -128,11 +129,10 @@ object ApplicationActor {
                                    replyTo: ActorRef[AppResponse])
                                  (implicit api: Service): Behavior[AppCommand] =
     Behaviors.setup { context =>
-
-      val accumulator = context.spawnAnonymous(newAccumulator(context, stories.size))
+      val accumulator = context.spawnAnonymous(newAccumulator(context, context.log, stories.size))
 
       stories foreach { storyId =>
-        val act = context.spawnAnonymous(StoryReducerActor(storyId))
+        val act = context.spawn(StoryReducerActor(storyId), s"story-actor-$storyId")
         act ! StoryReducerActor.Start(accumulator)
       }
 
@@ -153,17 +153,21 @@ object ApplicationActor {
    * @return
    */
   def newAccumulator(context: ActorContext[AppCommand],
+                     logger: Logger,
                      pending: Int,
                      acc: Map[Story, Set[CommentReport]] = Map.empty): Behaviors.Receive[StoryResponse] =
     Behaviors.receiveMessage {
       case StoryReducerActor.StoryReduced(story, report) =>
         val updated = acc + (story -> report)
+        val remaining = pending - 1
 
-        if (pending > 1)
-          newAccumulator(context, pending - 1, updated)
+        logger.info("Story reduced {}, remaining responses {}", story, remaining)
+
+        if (remaining > 0)
+          newAccumulator(context, logger, remaining, updated)
         else {
           context.self ! AllStoriesLoadedWrapped(updated)
-          Behaviors.stopped
+          Behaviors.same
         }
     }
 

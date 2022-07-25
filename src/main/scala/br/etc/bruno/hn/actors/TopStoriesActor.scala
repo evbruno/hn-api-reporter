@@ -21,12 +21,13 @@ object TopStoriesActor {
   final case class Start(replyTo: ActorRef[TopStoriesLoadedResponse]) extends TopStoriesCommand
 
   def apply(topStories: Int)(implicit api: Service): Behavior[TopStoriesCommand] =
-    Behaviors.receive { (context, message) =>
-      message match {
-        case Start(replyTo) =>
-          val storiesID = api.fetchTopStories().map(_.ids.toSet).getOrElse(Set.empty)
-          replyTo ! TopStoriesLoadedResponse(storiesID)
-          Behaviors.same
-      }
+    Behaviors.receiveMessage {
+      case Start(replyTo) =>
+        val storiesID = api.fetchTopStories().map(_.ids.toSet.take(topStories)).getOrElse(Set.empty)
+        replyTo ! TopStoriesLoadedResponse(storiesID)
+        Behaviors.same
+      case _              =>
+        Behaviors.unhandled
     }
+
 }
