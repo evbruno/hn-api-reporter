@@ -4,30 +4,28 @@ import akka.actor.typed.scaladsl.{ ActorContext, Behaviors, Routers }
 import akka.actor.typed.{ ActorRef, Behavior, SupervisorStrategy }
 import br.etc.bruno.hn.model.{ Comment, ID, Story }
 import br.etc.bruno.hn.services.HackerNewsAPI.Service
+import br.etc.bruno.hn.services.Report.CommentReport
 
 /**
- * This first implementation was loading all the comments into memory.
- * We don't need that, we can start "reducing" as soon as we get the [[Comment]]
-
- * @see Use [[StoryReducerActor]] instead
+ * Actor to load and reduce the Comments.
+ *
+ * Use this one instead of [[StoryActor]]
  */
-@deprecated
-object StoryActor {
+object StoryReducerActor {
 
   // Response commands
   sealed trait StoryResponse
-  final case class StoryLoaded(story: Story) extends StoryResponse
+  final case class StoryReduced(story: Story, report: Set[CommentReport]) extends StoryResponse
 
   // Request commands
   sealed trait StoryCommand
-  final case class Start(replyTo: ActorRef[StoryLoaded]) extends StoryCommand
+  final case class Start(replyTo: ActorRef[StoryReduced]) extends StoryCommand
   final case class Process(itemID: ID, replyTo: ActorRef[StoryCommand]) extends StoryCommand
   final case class WorkerResult(result: Option[Comment]) extends StoryCommand
 
   // Internal protocol
   private final case object Dequeue extends StoryCommand
 
-  @deprecated
   def apply(storyId: ID)(implicit api: Service): Behavior[StoryCommand] = {
     api.fetchItem(storyId) match {
       case None               =>
@@ -55,9 +53,9 @@ object StoryActor {
 
   private def running(story: Story,
                       commentActor: ActorRef[StoryCommand],
-                      replyTo: ActorRef[StoryLoaded],
+                      replyTo: ActorRef[StoryReduced],
                       queue: Seq[ID] = Seq.empty,
-                      accumulated: Map[ID, Comment] = Map.empty,
+                      accumulated: Map[String, CommentReport] = Map.empty,
                       pending: Int = 0): Behavior[StoryCommand] =
     Behaviors.receive[StoryCommand] { (context, message) =>
       message match {
@@ -75,27 +73,32 @@ object StoryActor {
           }
 
         case WorkerResult(maybeComment) =>
-          context.log.info(s"Got result {}", maybeComment)
+          context.log.debug(s"Got result {}", maybeComment)
 
           val updatedQueue = queue ++ maybeComment.map(_.kids).getOrElse(Seq.empty)
-          val updatedResult = maybeComment.fold(accumulated) { c => accumulated + (c.id -> c)}
+          val updatedResult = maybeComment.fold(accumulated) { comment =>
+            accumulated.updatedWith(comment.user)  {
+              case Some(rep) =>
+                Some(rep + 1)
+              case None =>
+                Some(CommentReport(comment.user, 1))
+            }
+          }
 
           if (updatedQueue.nonEmpty) {
-            context.log.info(s"Non Empty queue, awaiting for {} kids, w/ {} pending execs", updatedQueue.size, pending)
+            context.log.debug(s"Non Empty queue, awaiting for {} kids, w/ {} pending execs", updatedQueue.size, pending)
             context.self ! Dequeue
             running(story, commentActor, replyTo, updatedQueue, updatedResult, pending - 1)
           } else if (pending >= 2) {
-            context.log.info(s"Empty queue, still awaiting for {} execs", pending)
+            context.log.debug(s"Empty queue, still awaiting for {} execs", pending)
             running(story, commentActor, replyTo, updatedQueue, updatedResult, pending - 1)
           } else {
-            context.log.info(s"Empty queue, all done!")
-            val result = story.copy(kids = updatedResult)
-            replyTo ! StoryLoaded(result)
+            context.log.info(s"Empty queue, all done for story {}", story)
+            replyTo ! StoryReduced(story, updatedResult.values.toSet)
             Behaviors.empty
           }
 
         case _ =>
-          context.log.error("unhandled...")
           Behaviors.unhandled
       }
 
@@ -104,43 +107,10 @@ object StoryActor {
   private def buildCommentsWorker(context: ActorContext[StoryCommand])
                                  (implicit api: Service): ActorRef[StoryCommand] = {
     val pool = Routers.pool(poolSize = 4) {
-      Behaviors.supervise(newCommentsActor())
+      Behaviors.supervise(CommentsActor())
         .onFailure[Exception](SupervisorStrategy.restart)
     }
 
     context.spawn(pool, "comments-worker-pool")
   }
-
-  /**
-   * This is a dumb copy & paste from [[CommentsActor]] that was kept just for
-   * references.
-   *
-   * This actor is only used on the specs
-   */
-  private def newCommentsActor()(implicit api: Service): Behavior[StoryCommand] =
-    Behaviors.setup { context =>
-
-      context.log.info(s"Starting worker at {}", Thread.currentThread().getName)
-
-      Behaviors.receiveMessage[StoryCommand] {
-        case Process(id, replyTo) =>
-          context.log.info("Worker processing kid {}", id)
-
-          val comment = api.fetchItem(id).flatMap { item =>
-            for {
-              parent <- item.parent
-              author <- item.by
-              kids <- item.kids.orElse(Some(Seq.empty))
-              if !item.deleted.getOrElse(false)
-            } yield
-              Comment(item.id, parent, author, kids)
-          }
-
-          replyTo ! WorkerResult(comment)
-
-          Behaviors.same
-        case _ =>
-          Behaviors.unhandled
-      }
-    }
 }

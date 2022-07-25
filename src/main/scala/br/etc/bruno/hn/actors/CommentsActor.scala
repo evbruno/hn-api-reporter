@@ -2,26 +2,27 @@ package br.etc.bruno.hn.actors
 
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
-import br.etc.bruno.hn.HackerNewsAPI.Service
+import br.etc.bruno.hn.services.HackerNewsAPI.Service
 import br.etc.bruno.hn.model.Comment
 
 /**
- * Worker that listens to [[Process]] messages and reply back to its caller
+ * Worker Actor that listens to [[Process]] messages to process specific
+ * [[Comment]]'s
  *
  * @see [[StoryActor]]
  */
 object CommentsActor {
 
-  import StoryActor._
+  import StoryReducerActor._
 
   def apply()(implicit api: Service): Behavior[StoryCommand] =
     Behaviors.setup { context =>
 
-      context.log.info(s"Starting worker at ${Thread.currentThread().getName}")
+      context.log.info(s"Starting worker at {}", Thread.currentThread().getName)
 
       Behaviors.receiveMessage[StoryCommand] {
         case Process(id, replyTo) =>
-          context.log.info("Worker processing kid {}", id)
+          context.log.debug("Worker processing kid {}", id)
 
           val comment = api.fetchItem(id).flatMap { item =>
             for {
@@ -36,6 +37,9 @@ object CommentsActor {
           replyTo ! WorkerResult(comment)
 
           Behaviors.same
+
+        case _ =>
+          Behaviors.unhandled
       }
     }
 

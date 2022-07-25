@@ -1,6 +1,8 @@
 package br.etc.bruno.hn
 
 import br.etc.bruno.hn.model._
+import br.etc.bruno.hn.services.Report.{ CommentReport, OverallCommentReport, OverallUserReport }
+import br.etc.bruno.hn.services.{ Report, ReportPrinter }
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.should.Matchers
 
@@ -94,17 +96,27 @@ class ReportingSpec extends AnyFreeSpec with Matchers {
   )
 
   "story comments" - {
-    "build the report for all Stories / user" in {
-      val r = Report.reportAll(Seq(StoryA, StoryB, StoryC)).sortBy(_.story.id)
-      r(0).prettyColumns shouldBe Seq("Story A", "user-c (3 for story - 8 total)", "user-b (2 for story - 10 total)")
-      r(1).prettyColumns shouldBe Seq("Story B", "user-a (4 for story - 9 total)", "user-b (3 for story - 10 total)")
-      r(2).prettyColumns shouldBe Seq("Story C", "user-b (5 for story - 10 total)", "user-a (4 for story - 9 total)")
-    }
-
     "build tabular data output" in {
       val topCommenter = 4
-      val r1 = Report.reportAll(Seq(StoryA, StoryB, StoryC), topCommenter).sortBy(_.story.id)
-      val table = Report.tabularData(r1, topCommenter)
+      val rows = Seq(
+        OverallCommentReport(StoryA, Seq(
+          OverallUserReport(CommentReport("user-c", 3), 8),
+          OverallUserReport(CommentReport("user-b", 2), 10),
+          OverallUserReport(CommentReport("user-a", 1), 9)
+        )),
+        OverallCommentReport(StoryB, Seq(
+          OverallUserReport(CommentReport("user-a", 4), 9),
+          OverallUserReport(CommentReport("user-b", 3), 10),
+          OverallUserReport(CommentReport("user-c", 2), 8)
+        )),
+        OverallCommentReport(StoryC, Seq(
+          OverallUserReport(CommentReport("user-b", 5), 10),
+          OverallUserReport(CommentReport("user-a", 4), 9),
+          OverallUserReport(CommentReport("user-c", 3), 8)
+        )),
+      )
+      val printer = new ReportPrinter(rows, topCommenter)
+      val table = printer.tabularData()
       val expected = """|-------------------------------------------------------------------------------------------------------------------------
                         ||Story  |#1 Top Commenter               |#2 Top Commenter               |#3 Top Commenter              |#4 Top Commenter|
                         |-------------------------------------------------------------------------------------------------------------------------

@@ -1,8 +1,8 @@
-package br.etc.bruno.hn
+package br.etc.bruno.hn.services
+
+import br.etc.bruno.hn.model.Story
 
 object Report {
-
-  import model._
 
   /**
    * Holds the number of comments for an <code>user</code>
@@ -12,6 +12,9 @@ object Report {
    */
   case class CommentReport(user: String, comments: Int) {
     override def toString: String = s"($user, $comments)"
+
+    def +(num: Int): CommentReport =
+      copy(comments = comments + num)
   }
 
   /**
@@ -45,17 +48,17 @@ object Report {
   }
 
   /**
-   * Calculates all the "top commenters" for the stories (map/reduce)
+   * Calculates all the "top commenters" for the input stories
    *
-   * @param stories
+   * @param reportPerStory
    * @param topCommenter
    * @return
    */
-  def reportAll(stories: Seq[Story], topCommenter: Int = 2): Seq[OverallCommentReport] = {
-    val reportPerStory = stories.map { story => story -> report(story) }
-    val userTotalsCache = sumComments(reportPerStory)
+  def aggregate(reportPerStory: Set[(Story, Set[CommentReport])], topCommenter: Int = 2): Seq[OverallCommentReport] = {
+    val reportSeq = reportPerStory.toSeq.map { case(s, rs) => (s, rs.toSeq) }
+    val userTotalsCache = sumComments(reportSeq)
 
-    reportPerStory map {
+    reportSeq map {
       case (story, report) =>
         // sort reverse and grab topCommenters
         val localUsers = report.sortBy(_.comments * -1).take(topCommenter)
@@ -67,53 +70,6 @@ object Report {
         OverallCommentReport(story, userReports)
     }
   }
-
-  def tabularData(rows: Seq[OverallCommentReport],
-                  topCommenter: Int,
-                  div: String = "|"): String = {
-
-    val newHeader = header(topCommenter)
-
-    val noData = "< no data >"
-    val newBody = rows.map { row =>
-      val newRow = row.prettyColumns
-      if (newRow.size < topCommenter + 1) {
-        newRow ++ Array.fill(topCommenter + 1 - newRow.length)(noData)
-      } else
-        newRow
-    }
-
-    val columnSizes: Seq[Int] = newBody.foldLeft(newHeader.map(_.length)) {
-      case (sizes, row) =>
-        row.zipWithIndex.foldLeft(sizes) {
-          case (localSizes, (col, idx)) =>
-            if (localSizes(idx) < col.length)
-              localSizes.updated(idx, col.length)
-            else
-              localSizes
-
-        }
-    }
-
-    def pad(row: Seq[String]) =
-      row.zipWithIndex.map {
-        case (col, idx) =>
-          col.padTo(columnSizes(idx), ' ')
-      }
-
-    val headerPadded = pad(newHeader)
-    val bodyPadded = newBody.map(pad)
-    val line = Array.fill(columnSizes.sum + newHeader.length + 1)('-').mkString + "\n"
-
-    line +
-      headerPadded.mkString(div, div, div + "\n") +
-      line +
-      bodyPadded.map(_.mkString(div, div, div)).mkString("", "\n", "\n") +
-      line
-  }
-
-  private def header(topCommenter: Int): Seq[String] =
-    Seq("Story") ++ (1 to topCommenter).map(idx => s"#$idx Top Commenter")
 
   /**
    *
@@ -133,15 +89,4 @@ object Report {
     }
   }
 
-  /**
-   *
-   * @param story
-   * @return
-   */
-  private def report(story: Story): Seq[CommentReport] = {
-    story.kids.values
-      .groupBy(v => v.user)
-      .map(entry => CommentReport(entry._1, entry._2.size))
-      .toSeq
-  }
 }

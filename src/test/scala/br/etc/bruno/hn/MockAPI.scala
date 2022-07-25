@@ -1,6 +1,6 @@
 package br.etc.bruno.hn
 
-import br.etc.bruno.hn.HackerNewsAPI.Service
+import br.etc.bruno.hn.services.HackerNewsAPI.Service
 import br.etc.bruno.hn.api.{ ItemResponse, TopStoriesResponse }
 
 trait MockAPI extends OptHelpers {

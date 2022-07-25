@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  app:
+    image: openjdk:11
+    build:
+      context: .
+    command:
+      - /bin/bash
+      - -cxe
+      - |
+        wget -O- "http://downloads.lightbend.com/scala/2.13.8/scala-2.13.8.tgz" \
+          | tar xzf - -C /usr/local --strip-components=1
+        wget -O- "https://github.com/sbt/sbt/releases/download/v1.7.1/sbt-1.7.1.tgz" \
+          | tar xzf - -C /usr/local --strip-components=1
+        
+        sbt run

@@ -7,8 +7,10 @@ package object hn {
    */
   object model {
 
-    // I was not about Int or Long... so Ill be using an alias for now
-    // note: the API says the ID is unique
+    /**
+     * I'm using this type alias to track Items ID.
+     * note: the API says the ID is unique
+     */
     type ID = Long
 
     /**
@@ -32,12 +34,13 @@ package object hn {
      * @see See [[br.etc.bruno.hn.api.ItemResponse]] for the json API response
      * @param id
      * @param title
-     * @param kids
+     * @param kids This field is not longer being used. It was kept for reference
+     *             and its being used only at [[StoryActor]]
      */
     case class Story(
       id: ID,
       title: String,
-      kids: Map[ID, Comment])
+      kids: Map[ID, Comment] = Map.empty)
   }
 
   /**
@@ -49,19 +52,20 @@ package object hn {
 
     /**
      * Just wrapping the response
+     *
      * @param ids
      */
     case class TopStoriesResponse(ids: Seq[Long])
 
     /**
      * @see
-     * @param id The item's unique id.
-     * @param `type` The type of item. One of "job", "story", "comment", "poll", or "pollopt".
-     * @param by The username of the item's author. If deleted, this field is absent
-     * @param text The comment, story or poll text. HTML.
-     * @param title The title of the story, poll or job. HTML.
-     * @param parent The comment's parent: either another comment or the relevant story.
-     * @param kids The ids of the item's comments, in ranked display order.
+     * @param id      The item's unique id.
+     * @param `type`  The type of item. One of "job", "story", "comment", "poll", or "pollopt".
+     * @param by      The username of the item's author. If deleted, this field is absent
+     * @param text    The comment, story or poll text. HTML.
+     * @param title   The title of the story, poll or job. HTML.
+     * @param parent  The comment's parent: either another comment or the relevant story.
+     * @param kids    The ids of the item's comments, in ranked display order.
      * @param deleted True if the item is deleted.
      */
     case class ItemResponse(
@@ -72,8 +76,7 @@ package object hn {
        title: Option[String] = None,
        parent: Option[Long] = None,
        kids: Option[Seq[Long]] = None,
-       deleted: Option[Boolean] = None
-     )
+       deleted: Option[Boolean] = None)
   }
 
 }

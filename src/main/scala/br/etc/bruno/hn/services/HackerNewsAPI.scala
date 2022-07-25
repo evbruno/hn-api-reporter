@@ -1,5 +1,6 @@
-package br.etc.bruno.hn
+package br.etc.bruno.hn.services
 
+import br.etc.bruno.hn.api
 import br.etc.bruno.hn.model.ID
 
 object HackerNewsAPI {
@@ -25,9 +26,9 @@ object HackerNewsAPI {
 
   object impl extends Service {
 
-    import sttp.client3.circe._
-    import sttp.client3._
     import io.circe.generic.auto._
+    import sttp.client3._
+    import sttp.client3.circe._
 
     //TODO consider moving to HttpClientFutureBackend
     private val backend = HttpClientSyncBackend()
@@ -47,7 +48,7 @@ object HackerNewsAPI {
         .response(asJson[ItemResponse])
 
       request.send(backend).body match {
-        case Left(err) =>
+        case Left(err)    =>
           sys.error(err.getMessage)
           None
         case Right(value) =>
@@ -58,7 +59,3 @@ object HackerNewsAPI {
   }
 
 }
-
-
-
-

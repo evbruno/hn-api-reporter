@@ -3,9 +3,10 @@ package br.etc.bruno.hn.actors
 import akka.actor.typed.scaladsl.{ ActorContext, Behaviors, StashBuffer }
 import akka.actor.typed.{ ActorRef, Behavior }
 import akka.util.Timeout
-import br.etc.bruno.hn.HackerNewsAPI.Service
-import br.etc.bruno.hn.actors.StoryActor.StoryResponse
+import br.etc.bruno.hn.services.HackerNewsAPI.Service
+import br.etc.bruno.hn.actors.StoryReducerActor.StoryResponse
 import br.etc.bruno.hn.model._
+import br.etc.bruno.hn.services.Report.CommentReport
 import scala.concurrent.duration.DurationInt
 import scala.util.{ Failure, Success }
 
@@ -13,8 +14,10 @@ object ApplicationActor {
 
   // Response commands
   sealed trait AppResponse
-  final case class StoriesLoaded(result: Set[Story]) extends AppResponse
-  final case object NoStoriesFound extends AppResponse
+  final case class StoriesLoaded(result: Map[Story, Set[CommentReport]]) extends AppResponse
+
+  // old version
+  //final case class StoriesLoaded(result: Set[Story]) extends AppResponse
 
   // Request commands
   sealed trait AppCommand
@@ -22,10 +25,12 @@ object ApplicationActor {
 
   // Internal protocol
   private case class TopStoriesLoadedWrapped(res: TopStoriesActor.StoryResponse) extends AppCommand
-  private case class AllStoriesLoadedWrapped(result: Set[Story]) extends AppCommand
+  private case class AllStoriesLoadedWrapped(result: Map[Story, Set[CommentReport]]) extends AppCommand
 
-  def apply(topCommenter: Int = 2,
-            topStories: Int = 3)
+  // old version
+  //private case class AllStoriesLoadedWrapped(result: Set[Story]) extends AppCommand
+
+  def apply(topStories: Int = 3)
            (implicit api: Service): Behavior[AppCommand] = {
     Behaviors.withStash(8) { buffer =>
       Behaviors.setup[AppCommand] { context =>
@@ -41,18 +46,17 @@ object ApplicationActor {
             TopStoriesLoadedWrapped(Set.empty)
         }
 
-        initializing(context, buffer, topCommenter)
+        initializing(context, buffer)
       }
     }
   }
 
   private def initializing(context: ActorContext[AppCommand],
-                           buffer: StashBuffer[AppCommand],
-                           topCommenter: Int = 2)
+                           buffer: StashBuffer[AppCommand])
                           (implicit api: Service): Behaviors.Receive[AppCommand] =
     Behaviors.receiveMessage[AppCommand] {
       case TopStoriesLoadedWrapped(stories) =>
-        buffer.unstashAll(loadStories(stories, context, topCommenter))
+        buffer.unstashAll(loadStories(stories, context))
       case other                             =>
         // stash all other messages for later processing
         buffer.stash(other)
@@ -61,45 +65,44 @@ object ApplicationActor {
     }
 
   private def loadStories(stories: TopStoriesActor.StoryResponse,
-                            context: ActorContext[AppCommand],
-                            topCommenter: Int = 2)
+                            context: ActorContext[AppCommand])
                            (implicit api: Service): Behavior[AppCommand] =
     Behaviors.receiveMessage {
       case Start(replyTo) =>
         context.log.info("Loaded {} top stories", stories.size)
-        accumulatingStories(stories, replyTo, topCommenter)
+        accumulatingStories(stories, replyTo)
+      case _ =>
+        Behaviors.unhandled
     }
 
   private def accumulatingStories(
                                  stories: TopStoriesActor.StoryResponse,
-                                 replyTo: ActorRef[AppResponse],
-                                 topCommenter: Int = 2)
+                                 replyTo: ActorRef[AppResponse])
                                (implicit api: Service): Behavior[AppCommand] =
     Behaviors.setup { context =>
 
       val accumulator = context.spawnAnonymous(newAccumulator(context, stories.size))
 
       stories foreach { storyId =>
-          val act = context.spawnAnonymous(StoryActor(storyId))
-          act ! StoryActor.Start(accumulator)
+          val act = context.spawnAnonymous(StoryReducerActor(storyId))
+          act ! StoryReducerActor.Start(accumulator)
       }
 
       Behaviors.receiveMessage {
         case AllStoriesLoadedWrapped(response) =>
           replyTo ! StoriesLoaded(response)
           Behaviors.same
-        case t                                 =>
-          context.log.info("what? {}", t)
-          Behaviors.same
+        case _                                 =>
+          Behaviors.unhandled
       }
     }
 
   def newAccumulator(context: ActorContext[AppCommand],
                      pending: Int,
-                     acc: Set[Story] = Set.empty): Behaviors.Receive[StoryResponse] =
+                     acc: Map[Story, Set[CommentReport]] = Map.empty): Behaviors.Receive[StoryResponse] =
     Behaviors.receiveMessage {
-      case StoryActor.StoryLoaded(story: Story) =>
-        val updated: Set[Story] = acc + story
+      case StoryReducerActor.StoryReduced(story, report) =>
+        val updated = acc + (story -> report)
 
         if (pending > 1)
           newAccumulator(context, pending - 1, updated)
