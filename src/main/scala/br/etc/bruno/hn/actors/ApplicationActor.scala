@@ -10,6 +10,13 @@ import br.etc.bruno.hn.services.Report.CommentReport
 import scala.concurrent.duration.DurationInt
 import scala.util.{ Failure, Success }
 
+/**
+ * The main Actor that handles the loading of Top Stories and the preliminary
+ * comment results.
+ *
+ *  @see [[TopStoriesActor]]
+ *  @see [[StoryReducerActor]]
+ */
 object ApplicationActor {
 
   // Response commands
@@ -30,6 +37,16 @@ object ApplicationActor {
   // old version
   //private case class AllStoriesLoadedWrapped(result: Set[Story]) extends AppCommand
 
+  /**
+   * Initial state of this Actor, it will stash requests until receive
+   * the message [[TopStoriesActor.TopStoriesLoadedResponse]]
+   *
+   * next state: [[initializing()]]
+   *
+   * @param topStories
+   * @param api
+   * @return
+   */
   def apply(topStories: Int = 3)
            (implicit api: Service): Behavior[AppCommand] = {
     Behaviors.withStash(8) { buffer =>
@@ -51,6 +68,16 @@ object ApplicationActor {
     }
   }
 
+  /**
+   * Wait for the proper response from [[TopStoriesActor]]
+   *
+   * next state: starts loading the stories on [[loadStories()]]
+   *
+   * @param context
+   * @param buffer
+   * @param api
+   * @return
+   */
   private def initializing(context: ActorContext[AppCommand],
                            buffer: StashBuffer[AppCommand])
                           (implicit api: Service): Behaviors.Receive[AppCommand] =
@@ -64,28 +91,49 @@ object ApplicationActor {
 
     }
 
+  /**
+   * Waits for the outer message [[Start]] to start accumulating the Stories
+   *
+   * next state: [[accumulatingStories()]]
+   *
+   * @param stories
+   * @param context
+   * @param api
+   * @return
+   */
   private def loadStories(stories: TopStoriesActor.StoryResponse,
-                            context: ActorContext[AppCommand])
-                           (implicit api: Service): Behavior[AppCommand] =
+                          context: ActorContext[AppCommand])
+                         (implicit api: Service): Behavior[AppCommand] =
     Behaviors.receiveMessage {
       case Start(replyTo) =>
         context.log.info("Loaded {} top stories", stories.size)
         accumulatingStories(stories, replyTo)
-      case _ =>
+      case _              =>
         Behaviors.unhandled
     }
 
+  /**
+   * Waits for the all stories
+   *
+   * Final state.
+   *
+   * @see [[newAccumulator()]]
+   * @param stories
+   * @param replyTo
+   * @param api
+   * @return
+   */
   private def accumulatingStories(
-                                 stories: TopStoriesActor.StoryResponse,
-                                 replyTo: ActorRef[AppResponse])
-                               (implicit api: Service): Behavior[AppCommand] =
+                                   stories: TopStoriesActor.StoryResponse,
+                                   replyTo: ActorRef[AppResponse])
+                                 (implicit api: Service): Behavior[AppCommand] =
     Behaviors.setup { context =>
 
       val accumulator = context.spawnAnonymous(newAccumulator(context, stories.size))
 
       stories foreach { storyId =>
-          val act = context.spawnAnonymous(StoryReducerActor(storyId))
-          act ! StoryReducerActor.Start(accumulator)
+        val act = context.spawnAnonymous(StoryReducerActor(storyId))
+        act ! StoryReducerActor.Start(accumulator)
       }
 
       Behaviors.receiveMessage {
@@ -97,6 +145,13 @@ object ApplicationActor {
       }
     }
 
+  /**
+   *
+   * @param context
+   * @param pending tracks the pending responses
+   * @param acc
+   * @return
+   */
   def newAccumulator(context: ActorContext[AppCommand],
                      pending: Int,
                      acc: Map[Story, Set[CommentReport]] = Map.empty): Behaviors.Receive[StoryResponse] =

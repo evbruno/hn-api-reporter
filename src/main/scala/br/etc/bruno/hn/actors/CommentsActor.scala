@@ -6,9 +6,10 @@ import br.etc.bruno.hn.services.HackerNewsAPI.Service
 import br.etc.bruno.hn.model.Comment
 
 /**
- * Worker Actor that listens to [[Process]] messages to process specific
- * [[Comment]]'s
+ * Worker Actor that [[Process]] messages from process specific
+ * [[Comment]]'s (load items from API)
  *
+ * @see [[StoryReducerActor]]
  * @see [[StoryActor]]
  */
 object CommentsActor {

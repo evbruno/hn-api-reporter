@@ -26,6 +26,15 @@ object StoryReducerActor {
   // Internal protocol
   private final case object Dequeue extends StoryCommand
 
+  /**
+   * Uses the blocking api [[Service]] to load the item details
+   *
+   * next state: [[initializing()]]
+   *
+   * @param storyId
+   * @param api
+   * @return
+   */
   def apply(storyId: ID)(implicit api: Service): Behavior[StoryCommand] = {
     api.fetchItem(storyId) match {
       case None               =>
@@ -37,6 +46,19 @@ object StoryReducerActor {
     }
   }
 
+  /**
+   * Waits for the caller to start listening.
+   * This is the step where the Router is build, and each Story will use up to 4
+   * "workers"
+   *
+   * next state: [[running()]]
+   *
+   * @see [[buildCommentsWorker()]]
+   * @param story
+   * @param kids
+   * @param api
+   * @return
+   */
   private def initializing(story: Story,
                            kids: Seq[ID])
                           (implicit api: Service): Behavior[StoryCommand] =
@@ -46,11 +68,25 @@ object StoryReducerActor {
           context.log.info("Initializing {} kids for story ({}) {}", kids.size, story.id, story.title)
           context.self ! Dequeue
           running(story, buildCommentsWorker(context), replyTo, kids)
-        case _ =>
+        case _              =>
           Behaviors.unhandled
       }
     }
 
+  /**
+   * Aggregates all the messages from their [[CommentsActor]] workers.
+   *
+   * This is the final state, and will reply with the preliminary reports to its
+   * caller.
+   *
+   * @param story
+   * @param commentActor
+   * @param replyTo
+   * @param queue
+   * @param accumulated
+   * @param pending
+   * @return
+   */
   private def running(story: Story,
                       commentActor: ActorRef[StoryCommand],
                       replyTo: ActorRef[StoryReduced],

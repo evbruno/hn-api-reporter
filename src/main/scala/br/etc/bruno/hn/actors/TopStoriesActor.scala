@@ -10,9 +10,6 @@ import br.etc.bruno.hn.services.HackerNewsAPI.Service
  */
 object TopStoriesActor {
 
-  /**
-   * Maps a "Story ID" to a sequence of its children ("kids")
-   */
   type StoryResponse = Set[ID]
 
   // Response commands
@@ -27,9 +24,8 @@ object TopStoriesActor {
     Behaviors.receive { (context, message) =>
       message match {
         case Start(replyTo) =>
-          // FIXME: async ?
-          val storiesID = api.fetchTopStories().get.ids.take(topStories)
-          replyTo ! TopStoriesLoadedResponse(storiesID.toSet)
+          val storiesID = api.fetchTopStories().map(_.ids.toSet).getOrElse(Set.empty)
+          replyTo ! TopStoriesLoadedResponse(storiesID)
           Behaviors.same
       }
     }
